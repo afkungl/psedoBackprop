@@ -3,9 +3,10 @@
 """
 import logging
 import torch
-from pseudo_backprop.layers import FeedbackAlginementModule
+from pseudo_backprop.layers import FeedbackAlignmentModule
 from pseudo_backprop.layers import PseudoBackpropModule
-from pseudo_backprop.layers import VanillaLinear
+from pseudo_backprop.layers import DynPseudoBackpropModule
+from pseudo_backprop.layers import VanillaBackpropModule
 from pseudo_backprop import aux
 
 logging.basicConfig(format='Network modules -- %(levelname)s: %(message)s',
@@ -18,7 +19,7 @@ class FullyConnectedNetwork(torch.nn.Module):
         Feedforward network with relu non-linearities between the modules
     """
 
-    def __init__(self, layers, synapse_module, mode=None):
+    def __init__(self, layers, synapse_module, mode=None, weight_init="uniform_", backwards_weight_init="uniform_"):
         """
             Initialize the network
 
@@ -37,8 +38,40 @@ class FullyConnectedNetwork(torch.nn.Module):
         # create the synapse
         if mode is not None:
             self.mode = mode
+
+        # self.synapses =[]
+        # for index in range(self.num_layers - 1):
+        #     # if not conv layer
+        #     if not isinstance(self.layers[index], list) and not isinstance(self.layers[index + 1], list):
+        #         self.synapses.append(
+        #             synapse_module(self.layers[index],self.layers[index + 1])
+        #             )
+        #     # if next hidden layer is a conv layer
+        #     elif not isinstance(self.layers[index], list) and isinstance(self.layers[index + 1], list):
+        #         output_size = 
+        #         self.synapses.append(
+        #             synapse_module(self.layers[index], output_size)
+        #             )
+        #     # if current hidden layer is conv
+        #     elif isinstance(self.layers[index], list) and not isinstance(self.layers[index + 1], list):
+        #         input_size =
+        #         self.synapses.append(
+        #             synapse_module_conv2d(self.layers[index],self.layers[index + 1])
+        #             )
+        #      # if both are conv layers
+        #     elif isinstance(self.layers[index], list) and isinstance(self.layers[index + 1], list):
+        #         input_size =
+        #         output_size = 
+        #         self.synapses.append(
+        #             synapse_module_conv2d(input_size, output_size)
+        #             )
+        #     else:
+        #         raise ValueError(f'Parameter for layer {index} is not int or conv2d parameter array')
+
         self.synapses = [synapse_module(self.layers[index],
-                                        self.layers[index + 1]) for index in
+                                        self.layers[index + 1],
+                                        weight_init=weight_init,
+                                        backwards_weight_init=backwards_weight_init) for index in
                          range(self.num_layers - 1)]
 
         # look for gpu device, use gpu if available
@@ -53,37 +86,55 @@ class FullyConnectedNetwork(torch.nn.Module):
         self.operations = torch.nn.Sequential(*self.operations_list)
 
     @classmethod
-    def backprop(cls, layers):
+    def backprop(cls, layers, weight_init, backwards_weight_init):
         """
             Delegating constructor for the backprop case
         """
         logging.info("Network with vanilla backpropagation is constructed.")
-        return cls(layers, VanillaLinear)
+        return cls(layers, VanillaBackpropModule, weight_init=weight_init, backwards_weight_init=backwards_weight_init)
 
     @classmethod
-    def feedback_alignement(cls, layers):
+    def feedback_alignement(cls, layers, weight_init, backwards_weight_init):
         """
-            Delegating constructor for the feedback alignement case
+            Delegating constructor for the feedback alignment case
         """
-        logging.info("Network with feedback alignement is constructed.")
-        return cls(layers, FeedbackAlginementModule)
+        logging.info("Network with feedback alignment is constructed.")
+        return cls(layers, FeedbackAlignmentModule, weight_init=weight_init, backwards_weight_init=backwards_weight_init)
 
     @classmethod
-    def pseudo_backprop(cls, layers):
+    def pseudo_backprop(cls, layers, weight_init, backwards_weight_init):
         """
             Delegating constructor for the pseudo-backprop case
         """
         logging.info("Network with pseudo-backprop is constructed.")
-        return cls(layers, PseudoBackpropModule, mode='pseudo')
+        return cls(layers, PseudoBackpropModule, mode='pseudo', weight_init=weight_init, backwards_weight_init=backwards_weight_init)
 
     @classmethod
-    def gen_pseudo_backprop(cls, layers):
+    def gen_pseudo_backprop(cls, layers, weight_init, backwards_weight_init):
         """
             Delegating constructor for the generalized pseudo-backprop case
         """
         logging.info(
             "Network with generalized pseudo-backprop is constructed.")
-        return cls(layers, PseudoBackpropModule, mode='gen_pseudo')
+        return cls(layers, PseudoBackpropModule, mode='gen_pseudo', weight_init=weight_init, backwards_weight_init=backwards_weight_init)
+
+    @classmethod
+    def dyn_pseudo_backprop(cls, layers, weight_init, backwards_weight_init):
+        """
+            Delegating constructor for the dynamical pseudo-backprop case
+        """
+        logging.info(
+            "Network with dynamical pseudo-backprop is constructed.")
+        return cls(layers, DynPseudoBackpropModule, weight_init=weight_init, backwards_weight_init=backwards_weight_init)
+
+    # def conv_layer():
+    #     """
+    #         adds a convolutional layer
+    #     """
+    #     logging.info(
+    #         "Convolutional 2d layer added.")
+
+    #     return 0
 
     def forward(self, inputs):
         """
@@ -127,7 +178,7 @@ class FullyConnectedNetwork(torch.nn.Module):
         elif self.mode == 'gen_pseudo':
             logging.info('gen_pseudo redo was called')
             for index, synapse in enumerate(self.synapses):
-                logging.info(f'Working on index: {index}')
+                logging.info(f'(Re-)calculating backward weights in layer: {index}')
                 w_forward = synapse.get_forward()
                 input_data = self.forward_to_hidden(dataset,
                                                     index)
@@ -135,6 +186,53 @@ class FullyConnectedNetwork(torch.nn.Module):
                     w_forward.detach().cpu().numpy(),
                     input_data).to(self.device)
                 synapse.set_backward(b_backward)
+
+    def get_dataspec_pinverse(self, dataset=None):
+        """Calculate the data-specific pseudoinverse matrices.
+           This function can be used to compare *any* backward matrix
+           to the data-specific pseudoinverse
+        """
+        ds_pinv = []
+
+        for index, synapse in enumerate(self.synapses):
+            w_forward = synapse.get_forward()
+            input_data = self.forward_to_hidden(dataset,
+                                                index).clone().detach().cpu()
+            ds_pinv.append(aux.generalized_pseudo(
+                w_forward.detach().cpu().numpy(),
+                input_data)
+            )
+
+        return ds_pinv
+
+    def get_gamma_matrix(self, dataset=None):
+        """Calculate Gamma matrices, i.e. the square root
+           of the autocorrelation matrix of the data vectors
+        """
+        gamma = []
+
+        for index, synapse in enumerate(self.synapses):
+            input_data = self.forward_to_hidden(dataset,
+                                                index)
+            gamma.append(aux.calc_gamma_matrix(
+                         input_data).detach()
+            )
+
+        return gamma
+
+    def get_gamma2_matrix(self, dataset=None):
+        """Calculate squared Gamma matrices
+        """
+        gamma2 = []
+
+        for index, synapse in enumerate(self.synapses):
+            input_data = self.forward_to_hidden(dataset,
+                                                index)
+            gamma2.append(aux.calc_gamma2_matrix_torch(
+                         input_data).detach()
+            )
+
+        return gamma2
 
     def get_forward_weights(self):
         """Get a copy of the forward weights"""

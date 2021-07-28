@@ -2,12 +2,13 @@
     "batch_size": 20,
     "layers": [784, 1000, 10],
     "epochs": 50,
-    "model_folder": "model_fa",
-    "model_type": "fa",
+    "model_folder": "model_dyn_pseudo",
+    "model_type": "dyn_pseudo",
     "learning_rate": 0.001,
+    "backwards_learning_rate": 0.0001,
+    "size_of_regularizer": 0.1,
     "momentum": 0.0,
     "weight_decay": 0.0,
     "random_seed": 123456,
-    "dataset": "mnist",
     "dataset_path": "../../dataset/mnist"
 }

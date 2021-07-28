@@ -1,26 +1,31 @@
 """Auxillary functions for the experiments."""
 import argparse
+import torch
 from pseudo_backprop.network import FullyConnectedNetwork
 
 
-def load_network(model_type, layers):
+def load_network(model_type, layers, weight_init = "uniform_", backwards_weight_init = "uniform_"):
     """Load the network for testing and training
 
     Args:
         model_type: type of the model, string
         layers (list): number of neurons in the layers
+        weight_init: method of weight initialization (e.g. uniform_)
+        backwards_weight_init: method of backwards weight initialization (e.g. uniform_)
     """
 
     # make the networks
-    possible_networks = ['fa', 'backprop', 'pseudo_backprop']
+    possible_networks = ['fa', 'backprop', 'pseudo_backprop', 'gen_pseudo', 'dyn_pseudo']
     if model_type == 'fa':
-        backprop_net = FullyConnectedNetwork.feedback_alignement(layers)
+        backprop_net = FullyConnectedNetwork.feedback_alignement(layers, weight_init, backwards_weight_init)
     elif model_type == 'backprop':
-        backprop_net = FullyConnectedNetwork.backprop(layers)
+        backprop_net = FullyConnectedNetwork.backprop(layers, weight_init, backwards_weight_init)
     elif model_type == 'pseudo_backprop':
-        backprop_net = FullyConnectedNetwork.pseudo_backprop(layers)
+        backprop_net = FullyConnectedNetwork.pseudo_backprop(layers, weight_init, backwards_weight_init)
     elif model_type == 'gen_pseudo':
-        backprop_net = FullyConnectedNetwork.gen_pseudo_backprop(layers)
+        backprop_net = FullyConnectedNetwork.gen_pseudo_backprop(layers, weight_init, backwards_weight_init)
+    elif model_type == 'dyn_pseudo':
+        backprop_net = FullyConnectedNetwork.dyn_pseudo_backprop(layers, weight_init, backwards_weight_init)
     else:
         raise ValueError(f'{model_type} is not a valid option. Implemented \
             options are in {possible_networks}')
@@ -42,6 +47,23 @@ def parse_experiment_arguments():
                         default='test')
     parser.add_argument('--per_images', type=int, default=10000,
                         help='Per so many images we evaluate the model')
+    parser.add_argument('--epoch', type=int,
+                        help='Which epoch to validate')
     args = parser.parse_args()
 
     return args
+
+def cosine_similarity_tensors(A, B):
+    # Calculate the cosine similarity between two tensors
+    # using the Frobenius inner product
+
+    product = torch.trace(torch.mm(torch.t(A),B))
+    norm = (torch.trace(torch.mm(torch.t(A),A)))**.5 * (torch.trace(torch.mm(torch.t(B),B)))**.5
+
+    # returns cos(theta)
+    return product / norm
+
+# alternative measure for the distance of two tensors
+def norm_distance(A,B):
+
+    return torch.linalg.norm(A - B)**2 / torch.linalg.norm(A) / torch.linalg.norm(B)

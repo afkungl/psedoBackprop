@@ -54,15 +54,15 @@ def main(args):
     """
     # prepare for loading
     data = {}
-    names = ['bp', 'fa', 'pseudo_bp', "gen_pseudo"]
+    names = ['bp', 'fa', 'pseudo_bp', "gen_pseudo", 'dyn_pseudo']
     cases = [args.params_vbp, args.params_fa, args.params_pseudo,
-             args.params_gen_pseudo]
+             args.params_gen_pseudo, args.params_dyn_pseudo]
 
     # Load the resutls
     for name, case in zip(names, cases):
         data[name] = load_datafiles(case)
 
-    # make the plots
+    # make the plots of error and loss
     fig, axes = plt.subplots(ncols=2, nrows=2)
     for index, mode in zip([(0, 0), (0, 1), (1, 0), (1, 1)],
                            ['train_loss', 'train_error',
@@ -72,6 +72,7 @@ def main(args):
                          backprop=data['bp'][mode],
                          pseudo=data['pseudo_bp'][mode],
                          gen_pseudo=data['gen_pseudo'][mode],
+                         dyn_pseudo=data['dyn_pseudo'][mode],
                          y_type=y_label)
 
     fig.savefig('results.png')
@@ -88,6 +89,8 @@ if __name__ == '__main__':
                         help='Path to the pseudo backprop parameter json.')
     PARSER.add_argument('--params_gen_pseudo', type=str, default=None,
                         help='Path to the gen-pseudo backprop parameter json.')
+    PARSER.add_argument('--params_dyn_pseudo', type=str, default=None,
+                        help='Path to the dyn-pseudo backprop parameter json.')
     ARGS = PARSER.parse_args()
 
     main(ARGS)
